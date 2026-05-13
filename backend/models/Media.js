@@ -50,6 +50,9 @@ const mediaSchema = new mongoose.Schema(
     deviceInfo: {
       source: { type: String, default: '' },
       cameraLabel: { type: String, default: '' },
+      make: { type: String, default: '' },
+      model: { type: String, default: '' },
+      originalDateTime: { type: String, default: '' },
       platform: { type: String, default: '' },
       userAgent: { type: String, default: '' },
       language: { type: String, default: '' },
@@ -59,6 +62,7 @@ const mediaSchema = new mongoose.Schema(
       capturedAt: { type: Date },
       width: { type: Number },
       height: { type: Number },
+      hasExif: { type: Boolean, default: false },
     },
     uploadedBy: {
       type: mongoose.Schema.Types.ObjectId,

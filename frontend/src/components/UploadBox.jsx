@@ -73,6 +73,107 @@ export default function UploadBox({ user, categories, onUploaded }) {
     }
   }
 
+  const readExifText = (view, tiffStart, entryOffset, littleEndian) => {
+    const type = view.getUint16(entryOffset + 2, littleEndian)
+    const count = view.getUint32(entryOffset + 4, littleEndian)
+    const valueOffset = entryOffset + 8
+
+    if (type !== 2 || count < 1) return ''
+
+    const textOffset = count <= 4
+      ? valueOffset
+      : tiffStart + view.getUint32(valueOffset, littleEndian)
+
+    const chars = []
+    for (let index = 0; index < count - 1; index += 1) {
+      const charCode = view.getUint8(textOffset + index)
+      if (charCode) chars.push(String.fromCharCode(charCode))
+    }
+    return chars.join('').trim()
+  }
+
+  const readExifIfd = (view, tiffStart, ifdOffset, littleEndian) => {
+    if (!ifdOffset) return {}
+
+    const entries = view.getUint16(tiffStart + ifdOffset, littleEndian)
+    const data = {}
+
+    for (let index = 0; index < entries; index += 1) {
+      const entryOffset = tiffStart + ifdOffset + 2 + index * 12
+      const tag = view.getUint16(entryOffset, littleEndian)
+
+      if (tag === 0x010f) data.make = readExifText(view, tiffStart, entryOffset, littleEndian)
+      if (tag === 0x0110) data.model = readExifText(view, tiffStart, entryOffset, littleEndian)
+      if (tag === 0x0132) data.exifDate = readExifText(view, tiffStart, entryOffset, littleEndian)
+      if (tag === 0x8769) data.exifIfdOffset = view.getUint32(entryOffset + 8, littleEndian)
+      if (tag === 0x9003) data.originalDateTime = readExifText(view, tiffStart, entryOffset, littleEndian)
+      if (tag === 0xa002) data.pixelWidth = view.getUint32(entryOffset + 8, littleEndian)
+      if (tag === 0xa003) data.pixelHeight = view.getUint32(entryOffset + 8, littleEndian)
+    }
+
+    return data
+  }
+
+  const readImageExif = async (pickedFile) => {
+    if (!pickedFile.type.includes('jpeg') && !pickedFile.name.toLowerCase().match(/\.(jpg|jpeg)$/)) return null
+
+    try {
+      const buffer = await pickedFile.arrayBuffer()
+      const view = new DataView(buffer)
+
+      if (view.getUint16(0) !== 0xffd8) return null
+
+      let offset = 2
+      while (offset < view.byteLength) {
+        const marker = view.getUint16(offset)
+        offset += 2
+        const size = view.getUint16(offset)
+        offset += 2
+
+        if (marker === 0xffe1) {
+          const exifHeader = [0, 1, 2, 3, 4, 5].map((index) => String.fromCharCode(view.getUint8(offset + index))).join('')
+          if (exifHeader !== 'Exif\0\0') return null
+
+          const tiffStart = offset + 6
+          const littleEndian = view.getUint16(tiffStart) === 0x4949
+          const firstIfdOffset = view.getUint32(tiffStart + 4, littleEndian)
+          const mainIfd = readExifIfd(view, tiffStart, firstIfdOffset, littleEndian)
+          const exifIfd = readExifIfd(view, tiffStart, mainIfd.exifIfdOffset, littleEndian)
+          return { ...mainIfd, ...exifIfd }
+        }
+
+        offset += size - 2
+      }
+    } catch {
+      return null
+    }
+
+    return null
+  }
+
+  const getDirectUploadDeviceInfo = async (pickedFile, dimensions = {}) => {
+    const exif = await readImageExif(pickedFile)
+    const cameraName = [exif?.make, exif?.model].filter(Boolean).join(' ').trim()
+
+    return {
+      source: exif ? 'Direct upload EXIF' : 'Direct upload',
+      cameraLabel: cameraName || 'Not found in image metadata',
+      make: exif?.make || '',
+      model: exif?.model || '',
+      originalDateTime: exif?.originalDateTime || exif?.exifDate || '',
+      platform: navigator.platform || 'Unknown',
+      userAgent: navigator.userAgent || 'Unknown',
+      language: navigator.language || 'Unknown',
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Unknown',
+      screen: `${window.screen.width} x ${window.screen.height}`,
+      viewport: `${window.innerWidth} x ${window.innerHeight}`,
+      capturedAt: new Date(pickedFile.lastModified || Date.now()).toISOString(),
+      width: exif?.pixelWidth || dimensions.width,
+      height: exif?.pixelHeight || dimensions.height,
+      hasExif: Boolean(exif),
+    }
+  }
+
   const stopCamera = () => {
     stream?.getTracks().forEach((track) => track.stop())
     setStream(null)
@@ -87,7 +188,7 @@ export default function UploadBox({ user, categories, onUploaded }) {
     stream?.getTracks().forEach((track) => track.stop())
   }, [stream])
 
-  const selectFile = (incoming) => {
+  const selectFile = async (incoming) => {
     const picked = incoming?.[0]
     if (!picked) return
     if (!picked.type.startsWith('image') && !picked.type.startsWith('video')) return setError('Only image and video files are supported.')
@@ -96,7 +197,8 @@ export default function UploadBox({ user, categories, onUploaded }) {
     setError('')
     setFile(picked)
     fetchFileDetails(picked, 'Direct upload')
-    setForm((current) => ({ ...current, deviceInfo: null }))
+    const deviceInfo = picked.type.startsWith('image/') ? await getDirectUploadDeviceInfo(picked) : null
+    setForm((current) => ({ ...current, deviceInfo }))
     if (!form.title) setForm((current) => ({ ...current, title: picked.name.replace(/\.[^/.]+$/, '') }))
   }
 
@@ -228,6 +330,9 @@ export default function UploadBox({ user, categories, onUploaded }) {
                   </div>
                   <div className="grid gap-2 text-slate-500 dark:text-slate-400 sm:grid-cols-2">
                     <p><span className="font-medium text-slate-700 dark:text-slate-200">Camera:</span> {form.deviceInfo.cameraLabel}</p>
+                    {form.deviceInfo.make && <p><span className="font-medium text-slate-700 dark:text-slate-200">Make:</span> {form.deviceInfo.make}</p>}
+                    {form.deviceInfo.model && <p><span className="font-medium text-slate-700 dark:text-slate-200">Model:</span> {form.deviceInfo.model}</p>}
+                    {form.deviceInfo.originalDateTime && <p><span className="font-medium text-slate-700 dark:text-slate-200">Photo taken:</span> {form.deviceInfo.originalDateTime}</p>}
                     <p><span className="font-medium text-slate-700 dark:text-slate-200">Platform:</span> {form.deviceInfo.platform}</p>
                     <p><span className="font-medium text-slate-700 dark:text-slate-200">Screen:</span> {form.deviceInfo.screen}</p>
                     <p><span className="font-medium text-slate-700 dark:text-slate-200">Viewport:</span> {form.deviceInfo.viewport}</p>

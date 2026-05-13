@@ -31,6 +31,9 @@ export default function MediaModal({ media, onClose, canDownload, showDeviceInfo
             <div className="grid gap-2 text-xs text-slate-300 sm:grid-cols-2 lg:grid-cols-3">
               <p><span className="text-slate-500">Source:</span> {deviceInfo.source}</p>
               <p><span className="text-slate-500">Camera:</span> {deviceInfo.cameraLabel}</p>
+              {deviceInfo.make && <p><span className="text-slate-500">Make:</span> {deviceInfo.make}</p>}
+              {deviceInfo.model && <p><span className="text-slate-500">Model:</span> {deviceInfo.model}</p>}
+              {deviceInfo.originalDateTime && <p><span className="text-slate-500">Photo taken:</span> {deviceInfo.originalDateTime}</p>}
               <p><span className="text-slate-500">Platform:</span> {deviceInfo.platform}</p>
               <p><span className="text-slate-500">Screen:</span> {deviceInfo.screen}</p>
               <p><span className="text-slate-500">Viewport:</span> {deviceInfo.viewport}</p>
