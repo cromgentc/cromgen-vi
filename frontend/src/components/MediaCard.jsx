@@ -1,4 +1,5 @@
-import { Check, Download, Edit3, Eye, Heart, Image, Trash2, Video, X } from 'lucide-react'
+import { Check, Edit3, Eye, Heart, Image, Trash2, Video, X } from 'lucide-react'
+import DownloadDropdown from './DownloadDropdown'
 
 const statusClass = {
   Approved: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
@@ -32,7 +33,7 @@ export default function MediaCard({ media, onView, onDelete, onApprove, onReject
         <div className="mt-4 flex flex-wrap gap-2">
           <button className="btn-soft" onClick={() => onView(media)}><Eye size={15} /> View</button>
           {onEdit && media.status === 'Pending' && <button className="btn-soft" onClick={() => onEdit(media)}><Edit3 size={15} /> Edit</button>}
-          {canDownload && <a className="btn-soft" href={media.src} download><Download size={15} /> Download</a>}
+          {canDownload && <DownloadDropdown media={media} />}
           {onApprove && media.status !== 'Approved' && <button className="btn-soft text-emerald-600" onClick={() => onApprove(media.id)}><Check size={15} /> Approve</button>}
           {onReject && media.status !== 'Rejected' && <button className="btn-soft text-rose-600" onClick={() => onReject(media.id)}><X size={15} /> Reject</button>}
           {onDelete && <button className="btn-soft text-rose-600" onClick={() => onDelete(media.id)}><Trash2 size={15} /> Delete</button>}

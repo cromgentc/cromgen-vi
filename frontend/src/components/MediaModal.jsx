@@ -1,4 +1,5 @@
-import { Download, Smartphone, X } from 'lucide-react'
+import { Smartphone, X } from 'lucide-react'
+import DownloadDropdown from './DownloadDropdown'
 
 export default function MediaModal({ media, onClose, canDownload, showDeviceInfo }) {
   if (!media) return null
@@ -13,7 +14,7 @@ export default function MediaModal({ media, onClose, canDownload, showDeviceInfo
             <p className="text-sm text-slate-400">{media.category} · {media.status}</p>
           </div>
           <div className="flex items-center gap-2">
-            {canDownload && <a className="icon-btn-dark" href={media.src} download aria-label="Download"><Download size={18} /></a>}
+            {canDownload && <DownloadDropdown media={media} dark />}
             <button className="icon-btn-dark" onClick={onClose} aria-label="Close"><X size={18} /></button>
           </div>
         </div>
