@@ -31,6 +31,24 @@ const mediaSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    storageProvider: {
+      type: String,
+      enum: ['cloudinary', 'local'],
+      default: 'local',
+    },
+    cloudinaryPublicId: {
+      type: String,
+      default: '',
+    },
+    cloudinaryResourceType: {
+      type: String,
+      enum: ['image', 'video', 'raw', ''],
+      default: '',
+    },
+    cloudinarySecureUrl: {
+      type: String,
+      default: '',
+    },
     thumbnailUrl: {
       type: String,
       default: '',

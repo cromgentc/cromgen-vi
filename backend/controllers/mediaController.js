@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import { deleteFromCloudinary, isCloudinaryConfigured, uploadBufferToCloudinary } from '../config/cloudinary.js'
 import Media from '../models/Media.js'
 
 const populateMedia = [
@@ -54,6 +55,46 @@ const parseDeviceInfo = (value) => {
   }
 }
 
+const saveBufferLocally = async (file) => {
+  const uploadDir = process.env.UPLOAD_DIR || 'uploads'
+  if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true })
+
+  const ext = path.extname(file.originalname)
+  const safeName = path
+    .basename(file.originalname, ext)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')
+  const filename = `${Date.now()}-${safeName || 'media'}${ext}`
+  const diskPath = path.join(process.cwd(), uploadDir, filename)
+
+  await fs.promises.writeFile(diskPath, file.buffer)
+  return {
+    provider: 'local',
+    fileUrl: `/${uploadDir}/${filename}`,
+    thumbnailUrl: file.mimetype.startsWith('image/') ? `/${uploadDir}/${filename}` : '',
+    publicId: '',
+    resourceType: '',
+    secureUrl: '',
+  }
+}
+
+const storeUploadedFile = async (file) => {
+  if (isCloudinaryConfigured()) {
+    const result = await uploadBufferToCloudinary(file)
+    return {
+      provider: 'cloudinary',
+      fileUrl: result.secure_url,
+      thumbnailUrl: file.mimetype.startsWith('image/') ? result.secure_url : result.secure_url.replace(/\.(mp4|mov|webm|m4v)$/i, '.jpg'),
+      publicId: result.public_id,
+      resourceType: result.resource_type,
+      secureUrl: result.secure_url,
+    }
+  }
+
+  return saveBufferLocally(file)
+}
+
 export const uploadMedia = async (req, res, next) => {
   try {
     if (!req.file) {
@@ -63,7 +104,7 @@ export const uploadMedia = async (req, res, next) => {
 
     const isVideo = req.file.mimetype.startsWith('video/')
     const status = req.user.role === 'admin' ? 'Approved' : 'Pending'
-    const fileUrl = `/uploads/${req.file.filename}`
+    const storedFile = await storeUploadedFile(req.file)
 
     const media = await Media.create({
       title: req.body.title,
@@ -71,8 +112,12 @@ export const uploadMedia = async (req, res, next) => {
       category: req.body.category,
       type: isVideo ? 'video' : 'image',
       status,
-      fileUrl,
-      thumbnailUrl: isVideo ? req.body.thumbnailUrl || '' : fileUrl,
+      fileUrl: storedFile.fileUrl,
+      storageProvider: storedFile.provider,
+      cloudinaryPublicId: storedFile.publicId,
+      cloudinaryResourceType: storedFile.resourceType,
+      cloudinarySecureUrl: storedFile.secureUrl,
+      thumbnailUrl: isVideo ? req.body.thumbnailUrl || storedFile.thumbnailUrl : storedFile.thumbnailUrl,
       originalName: req.file.originalname,
       mimeType: req.file.mimetype,
       size: req.file.size,
@@ -181,8 +226,12 @@ export const deleteMedia = async (req, res, next) => {
       throw new Error('Only admins or owners of pending uploads can delete media')
     }
 
-    const filePath = path.join(process.cwd(), media.fileUrl.replace(/^\//, ''))
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+    if (media.storageProvider === 'cloudinary') {
+      await deleteFromCloudinary(media.cloudinaryPublicId, media.cloudinaryResourceType || media.type)
+    } else {
+      const filePath = path.join(process.cwd(), media.fileUrl.replace(/^\//, ''))
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+    }
 
     await media.deleteOne()
     res.json({ success: true, message: 'Media deleted' })
@@ -221,6 +270,11 @@ export const downloadMedia = async (req, res, next) => {
     if (media.status !== 'Approved' && req.user.role !== 'admin') {
       res.status(403)
       throw new Error('Only approved media can be downloaded')
+    }
+
+    if (media.storageProvider === 'cloudinary') {
+      res.redirect(media.fileUrl)
+      return
     }
 
     const filePath = path.join(process.cwd(), media.fileUrl.replace(/^\//, ''))

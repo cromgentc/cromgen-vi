@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CheckCircle2, Clock3, FolderOpen, Image, Search, ShieldCheck, Tags, UploadCloud, Users, Video, XCircle } from 'lucide-react'
+import { CheckCircle2, Cloud, Clock3, FolderOpen, Image, Search, ShieldCheck, Tags, UploadCloud, Users, Video, XCircle } from 'lucide-react'
 import MediaCard from '../components/MediaCard'
 import MediaModal from '../components/MediaModal'
 import StatCard from '../components/StatCard'
@@ -275,9 +275,19 @@ export function ProfilePage() {
 }
 
 export function SettingsPage() {
+  const [cloudinary, setCloudinary] = useState(() => JSON.parse(localStorage.getItem('cromgen_cloudinary_settings') || '{"cloudName":"","apiKey":"","apiSecret":"","folder":"cromgen-media"}'))
+  const [toast, setToast] = useState('')
+
+  const saveCloudinary = (event) => {
+    event.preventDefault()
+    localStorage.setItem('cromgen_cloudinary_settings', JSON.stringify(cloudinary))
+    setToast('Cloudinary settings saved for this demo workspace.')
+  }
+
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Preferences" title="Settings" text="Demo controls for appearance, notifications, download policy, and review workflow." />
+      <PageHeader eyebrow="Preferences" title="Settings" text="Demo controls for appearance, notifications, download policy, review workflow, and Cloudinary media storage." />
+      {toast && <Toast text={toast} onClose={() => setToast('')} />}
       <div className="grid gap-4 md:grid-cols-2">
         {['Email notifications', 'Download permission checks', 'Staff approval workflow', 'Compact gallery cards'].map((item, index) => (
           <label key={item} className="glass-card flex items-center justify-between p-5 text-slate-700 dark:text-slate-200">
@@ -286,6 +296,27 @@ export function SettingsPage() {
           </label>
         ))}
       </div>
+      <form onSubmit={saveCloudinary} className="glass-card p-6">
+        <div className="flex items-start gap-4">
+          <span className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 text-white">
+            <Cloud size={22} />
+          </span>
+          <div>
+            <h2 className="text-xl font-semibold text-slate-950 dark:text-white">Cloudinary API</h2>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Backend uploads image/video files to Cloudinary when these environment keys are configured.</p>
+          </div>
+        </div>
+        <div className="mt-6 grid gap-4 md:grid-cols-2">
+          <label className="field-label">Cloud name<input className="field-input" value={cloudinary.cloudName} onChange={(event) => setCloudinary({ ...cloudinary, cloudName: event.target.value })} placeholder="your-cloud-name" /></label>
+          <label className="field-label">API key<input className="field-input" value={cloudinary.apiKey} onChange={(event) => setCloudinary({ ...cloudinary, apiKey: event.target.value })} placeholder="1234567890" /></label>
+          <label className="field-label">API secret<input className="field-input" type="password" value={cloudinary.apiSecret} onChange={(event) => setCloudinary({ ...cloudinary, apiSecret: event.target.value })} placeholder="Cloudinary API secret" /></label>
+          <label className="field-label">Folder<input className="field-input" value={cloudinary.folder} onChange={(event) => setCloudinary({ ...cloudinary, folder: event.target.value })} placeholder="cromgen-media" /></label>
+        </div>
+        <div className="mt-5 rounded-2xl bg-slate-100 p-4 text-sm text-slate-600 dark:bg-white/5 dark:text-slate-300">
+          For live backend upload, copy these values into `backend/.env` as `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, and `CLOUDINARY_FOLDER`.
+        </div>
+        <button className="btn-primary mt-5" type="submit"><Cloud size={17} /> Save Cloudinary API</button>
+      </form>
     </div>
   )
 }
