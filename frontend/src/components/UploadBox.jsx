@@ -50,6 +50,7 @@ export default function UploadBox({ user, categories, onUploaded }) {
 
   const getDeviceInfo = async (source, dimensions = {}) => {
     let cameraLabel = 'Unavailable'
+    const browserDevice = await getBrowserDeviceInfo()
 
     try {
       const devices = await navigator.mediaDevices?.enumerateDevices?.()
@@ -61,7 +62,10 @@ export default function UploadBox({ user, categories, onUploaded }) {
     return {
       source,
       cameraLabel,
+      mobileName: browserDevice.mobileName,
+      modelNumber: browserDevice.modelNumber,
       platform: navigator.platform || 'Unknown',
+      platformVersion: browserDevice.platformVersion,
       userAgent: navigator.userAgent || 'Unknown',
       language: navigator.language || 'Unknown',
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Unknown',
@@ -70,6 +74,56 @@ export default function UploadBox({ user, categories, onUploaded }) {
       capturedAt: new Date().toISOString(),
       width: dimensions.width,
       height: dimensions.height,
+    }
+  }
+
+  const parseUserAgentDevice = () => {
+    const ua = navigator.userAgent || ''
+    const androidModel = ua.match(/Android[^;)]*;\s*([^;)]+?)(?:\s+Build|\))/i)?.[1]?.trim()
+    const iosModel = ua.match(/\b(iPhone|iPad|iPod)\b/i)?.[1]
+
+    if (androidModel) {
+      return {
+        mobileName: androidModel,
+        modelNumber: androidModel,
+      }
+    }
+
+    if (iosModel) {
+      return {
+        mobileName: iosModel,
+        modelNumber: iosModel,
+      }
+    }
+
+    return {
+      mobileName: 'Not available from browser',
+      modelNumber: 'Not available from browser',
+    }
+  }
+
+  const getBrowserDeviceInfo = async () => {
+    const fallback = parseUserAgentDevice()
+
+    try {
+      const highEntropy = await navigator.userAgentData?.getHighEntropyValues?.(['model', 'platform', 'platformVersion', 'mobile'])
+      const model = highEntropy?.model || ''
+      const platform = highEntropy?.platform || ''
+
+      return {
+        mobileName: model || fallback.mobileName,
+        modelNumber: model || fallback.modelNumber,
+        platformVersion: highEntropy?.platformVersion || '',
+        userAgentPlatform: platform,
+        isMobile: Boolean(highEntropy?.mobile),
+      }
+    } catch {
+      return {
+        ...fallback,
+        platformVersion: '',
+        userAgentPlatform: '',
+        isMobile: /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || ''),
+      }
     }
   }
 
@@ -154,14 +208,18 @@ export default function UploadBox({ user, categories, onUploaded }) {
   const getDirectUploadDeviceInfo = async (pickedFile, dimensions = {}) => {
     const exif = await readImageExif(pickedFile)
     const cameraName = [exif?.make, exif?.model].filter(Boolean).join(' ').trim()
+    const browserDevice = await getBrowserDeviceInfo()
 
     return {
       source: exif ? 'Direct upload EXIF' : 'Direct upload',
       cameraLabel: cameraName || 'Not found in image metadata',
+      mobileName: cameraName || browserDevice.mobileName,
+      modelNumber: exif?.model || browserDevice.modelNumber,
       make: exif?.make || '',
       model: exif?.model || '',
       originalDateTime: exif?.originalDateTime || exif?.exifDate || '',
       platform: navigator.platform || 'Unknown',
+      platformVersion: browserDevice.platformVersion,
       userAgent: navigator.userAgent || 'Unknown',
       language: navigator.language || 'Unknown',
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Unknown',
@@ -329,11 +387,14 @@ export default function UploadBox({ user, categories, onUploaded }) {
                     Mobile details
                   </div>
                   <div className="grid gap-2 text-slate-500 dark:text-slate-400 sm:grid-cols-2">
+                    <p><span className="font-medium text-slate-700 dark:text-slate-200">Mobile name:</span> {form.deviceInfo.mobileName || 'Not available'}</p>
+                    <p><span className="font-medium text-slate-700 dark:text-slate-200">Model number:</span> {form.deviceInfo.modelNumber || 'Not available'}</p>
                     <p><span className="font-medium text-slate-700 dark:text-slate-200">Camera:</span> {form.deviceInfo.cameraLabel}</p>
                     {form.deviceInfo.make && <p><span className="font-medium text-slate-700 dark:text-slate-200">Make:</span> {form.deviceInfo.make}</p>}
                     {form.deviceInfo.model && <p><span className="font-medium text-slate-700 dark:text-slate-200">Model:</span> {form.deviceInfo.model}</p>}
                     {form.deviceInfo.originalDateTime && <p><span className="font-medium text-slate-700 dark:text-slate-200">Photo taken:</span> {form.deviceInfo.originalDateTime}</p>}
                     <p><span className="font-medium text-slate-700 dark:text-slate-200">Platform:</span> {form.deviceInfo.platform}</p>
+                    {form.deviceInfo.platformVersion && <p><span className="font-medium text-slate-700 dark:text-slate-200">OS version:</span> {form.deviceInfo.platformVersion}</p>}
                     <p><span className="font-medium text-slate-700 dark:text-slate-200">Screen:</span> {form.deviceInfo.screen}</p>
                     <p><span className="font-medium text-slate-700 dark:text-slate-200">Viewport:</span> {form.deviceInfo.viewport}</p>
                     <p><span className="font-medium text-slate-700 dark:text-slate-200">Language:</span> {form.deviceInfo.language}</p>

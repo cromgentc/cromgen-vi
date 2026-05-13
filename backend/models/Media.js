@@ -68,10 +68,13 @@ const mediaSchema = new mongoose.Schema(
     deviceInfo: {
       source: { type: String, default: '' },
       cameraLabel: { type: String, default: '' },
+      mobileName: { type: String, default: '' },
+      modelNumber: { type: String, default: '' },
       make: { type: String, default: '' },
       model: { type: String, default: '' },
       originalDateTime: { type: String, default: '' },
       platform: { type: String, default: '' },
+      platformVersion: { type: String, default: '' },
       userAgent: { type: String, default: '' },
       language: { type: String, default: '' },
       timezone: { type: String, default: '' },
