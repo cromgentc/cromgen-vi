@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Camera, FileUp, ImagePlus, RotateCcw, Save, Video } from 'lucide-react'
+import { Camera, Circle, FileUp, ImagePlus, RotateCcw, Save, Square, SwitchCamera, Video } from 'lucide-react'
 import { addMedia } from '../utils/auth'
 
 export default function UploadBox({ user, categories, onUploaded }) {
@@ -7,11 +7,15 @@ export default function UploadBox({ user, categories, onUploaded }) {
   const [dragging, setDragging] = useState(false)
   const [cameraOn, setCameraOn] = useState(false)
   const [stream, setStream] = useState(null)
+  const [facingMode, setFacingMode] = useState('environment')
+  const [recording, setRecording] = useState(false)
   const [form, setForm] = useState({ title: '', category: categories[0]?.name || '', description: '' })
   const [error, setError] = useState('')
   const [fileDetails, setFileDetails] = useState(null)
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
+  const mediaRecorderRef = useRef(null)
+  const recordedChunksRef = useRef([])
   const preview = useMemo(() => (file ? URL.createObjectURL(file) : ''), [file])
 
   const fetchFileDetails = (pickedFile, source, dimensions = {}) => {
@@ -74,6 +78,7 @@ export default function UploadBox({ user, categories, onUploaded }) {
       capturedAt: new Date().toISOString(),
       width: dimensions.width,
       height: dimensions.height,
+      cameraFacing: facingMode === 'user' ? 'Front camera' : 'Back camera',
     }
   }
 
@@ -232,10 +237,16 @@ export default function UploadBox({ user, categories, onUploaded }) {
     }
   }
 
+  const stopStreamOnly = (activeStream = stream) => {
+    activeStream?.getTracks().forEach((track) => track.stop())
+  }
+
   const stopCamera = () => {
-    stream?.getTracks().forEach((track) => track.stop())
+    if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop()
+    stopStreamOnly()
     setStream(null)
     setCameraOn(false)
+    setRecording(false)
   }
 
   useEffect(() => {
@@ -260,7 +271,7 @@ export default function UploadBox({ user, categories, onUploaded }) {
     if (!form.title) setForm((current) => ({ ...current, title: picked.name.replace(/\.[^/.]+$/, '') }))
   }
 
-  const startCamera = async () => {
+  const startCamera = async (nextFacingMode = facingMode) => {
     if (!navigator.mediaDevices?.getUserMedia) {
       setError('Camera is not supported in this browser. Please use direct upload.')
       return
@@ -268,16 +279,33 @@ export default function UploadBox({ user, categories, onUploaded }) {
 
     try {
       setError('')
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
-        audio: false,
-      })
+      stopStreamOnly()
+      let mediaStream
+
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: nextFacingMode },
+          audio: true,
+        })
+      } catch {
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: nextFacingMode },
+          audio: false,
+        })
+      }
+
+      setFacingMode(nextFacingMode)
       setFile(null)
       setStream(mediaStream)
       setCameraOn(true)
     } catch {
       setError('Camera access blocked or unavailable. Please allow camera permission or use direct upload.')
     }
+  }
+
+  const switchCamera = () => {
+    const nextFacingMode = facingMode === 'environment' ? 'user' : 'environment'
+    startCamera(nextFacingMode)
   }
 
   const capturePhoto = () => {
@@ -306,6 +334,60 @@ export default function UploadBox({ user, categories, onUploaded }) {
     }, 'image/jpeg', 0.92)
   }
 
+  const getRecordingMimeType = () => {
+    const options = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4']
+    return options.find((type) => window.MediaRecorder?.isTypeSupported?.(type)) || ''
+  }
+
+  const startRecording = () => {
+    if (!stream || !window.MediaRecorder) {
+      setError('Video recording is not supported in this browser.')
+      return
+    }
+
+    try {
+      recordedChunksRef.current = []
+      const mimeType = getRecordingMimeType()
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+      mediaRecorderRef.current = recorder
+
+      recorder.ondataavailable = (event) => {
+        if (event.data?.size > 0) recordedChunksRef.current.push(event.data)
+      }
+
+      recorder.onstop = async () => {
+        const type = recorder.mimeType || 'video/webm'
+        const extension = type.includes('mp4') ? 'mp4' : 'webm'
+        const blob = new Blob(recordedChunksRef.current, { type })
+        const recordedFile = new File([blob], `camera-recording-${Date.now()}.${extension}`, { type })
+        const dimensions = {
+          width: videoRef.current?.videoWidth || undefined,
+          height: videoRef.current?.videoHeight || undefined,
+        }
+        const deviceInfo = await getDeviceInfo('Mobile camera video', dimensions)
+
+        setFile(recordedFile)
+        fetchFileDetails(recordedFile, 'Mobile camera video', dimensions)
+        setForm((current) => ({ ...current, title: current.title || 'Camera Recording', deviceInfo }))
+        setRecording(false)
+        stopStreamOnly()
+        setStream(null)
+        setCameraOn(false)
+      }
+
+      recorder.start()
+      setRecording(true)
+      setError('')
+    } catch {
+      setError('Unable to start video recording. Please try direct upload.')
+      setRecording(false)
+    }
+  }
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop()
+  }
+
   const submit = (event) => {
     event.preventDefault()
     if (!file) return setError('Choose an image/video or capture a photo before saving.')
@@ -329,10 +411,19 @@ export default function UploadBox({ user, categories, onUploaded }) {
           <div className="w-full">
             <video ref={videoRef} autoPlay playsInline muted className="mx-auto max-h-[330px] w-full rounded-2xl bg-slate-950 object-contain" />
             <canvas ref={canvasRef} className="hidden" />
+            <div className="mt-4 inline-flex rounded-2xl bg-slate-100 p-1 text-sm font-semibold dark:bg-white/10">
+              <button type="button" className={`rounded-xl px-4 py-2 ${facingMode === 'environment' ? 'bg-white text-blue-600 shadow-sm dark:bg-slate-900 dark:text-cyan-300' : 'text-slate-500'}`} onClick={() => startCamera('environment')} disabled={recording}>Back</button>
+              <button type="button" className={`rounded-xl px-4 py-2 ${facingMode === 'user' ? 'bg-white text-blue-600 shadow-sm dark:bg-slate-900 dark:text-cyan-300' : 'text-slate-500'}`} onClick={() => startCamera('user')} disabled={recording}>Front</button>
+            </div>
             <div className="mt-5 flex flex-wrap justify-center gap-3">
-              <button type="button" className="btn-primary" onClick={capturePhoto}><Camera size={17} /> Capture photo</button>
+              <button type="button" className="btn-primary" onClick={capturePhoto} disabled={recording}><Camera size={17} /> Capture photo</button>
+              <button type="button" className="btn-muted" onClick={switchCamera} disabled={recording}><SwitchCamera size={17} /> Switch camera</button>
+              {recording
+                ? <button type="button" className="btn-muted text-rose-600" onClick={stopRecording}><Square size={17} /> Stop recording</button>
+                : <button type="button" className="btn-muted text-rose-600" onClick={startRecording}><Circle size={17} /> Record video</button>}
               <button type="button" className="btn-muted" onClick={stopCamera}><RotateCcw size={17} /> Cancel camera</button>
             </div>
+            {recording && <p className="mt-3 text-sm font-semibold text-rose-600 dark:text-rose-300">Recording video...</p>}
           </div>
         ) : preview ? (
           <div className="w-full">
@@ -390,6 +481,7 @@ export default function UploadBox({ user, categories, onUploaded }) {
                     <p><span className="font-medium text-slate-700 dark:text-slate-200">Mobile name:</span> {form.deviceInfo.mobileName || 'Not available'}</p>
                     <p><span className="font-medium text-slate-700 dark:text-slate-200">Model number:</span> {form.deviceInfo.modelNumber || 'Not available'}</p>
                     <p><span className="font-medium text-slate-700 dark:text-slate-200">Camera:</span> {form.deviceInfo.cameraLabel}</p>
+                    {form.deviceInfo.cameraFacing && <p><span className="font-medium text-slate-700 dark:text-slate-200">Camera side:</span> {form.deviceInfo.cameraFacing}</p>}
                     {form.deviceInfo.make && <p><span className="font-medium text-slate-700 dark:text-slate-200">Make:</span> {form.deviceInfo.make}</p>}
                     {form.deviceInfo.model && <p><span className="font-medium text-slate-700 dark:text-slate-200">Model:</span> {form.deviceInfo.model}</p>}
                     {form.deviceInfo.originalDateTime && <p><span className="font-medium text-slate-700 dark:text-slate-200">Photo taken:</span> {form.deviceInfo.originalDateTime}</p>}

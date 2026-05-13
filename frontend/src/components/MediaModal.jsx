@@ -33,6 +33,7 @@ export default function MediaModal({ media, onClose, canDownload, showDeviceInfo
               <p><span className="text-slate-500">Mobile name:</span> {deviceInfo.mobileName || 'Not available'}</p>
               <p><span className="text-slate-500">Model number:</span> {deviceInfo.modelNumber || 'Not available'}</p>
               <p><span className="text-slate-500">Camera:</span> {deviceInfo.cameraLabel}</p>
+              {deviceInfo.cameraFacing && <p><span className="text-slate-500">Camera side:</span> {deviceInfo.cameraFacing}</p>}
               {deviceInfo.make && <p><span className="text-slate-500">Make:</span> {deviceInfo.make}</p>}
               {deviceInfo.model && <p><span className="text-slate-500">Model:</span> {deviceInfo.model}</p>}
               {deviceInfo.originalDateTime && <p><span className="text-slate-500">Photo taken:</span> {deviceInfo.originalDateTime}</p>}

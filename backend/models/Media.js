@@ -68,6 +68,7 @@ const mediaSchema = new mongoose.Schema(
     deviceInfo: {
       source: { type: String, default: '' },
       cameraLabel: { type: String, default: '' },
+      cameraFacing: { type: String, default: '' },
       mobileName: { type: String, default: '' },
       modelNumber: { type: String, default: '' },
       make: { type: String, default: '' },
