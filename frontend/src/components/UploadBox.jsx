@@ -3,6 +3,7 @@ import { Camera, Circle, FileUp, ImagePlus, RotateCcw, Save, Square, SwitchCamer
 import { addMedia } from '../utils/auth'
 
 export default function UploadBox({ user, categories, onUploaded }) {
+  const maxFileSizeMb = Number(localStorage.getItem('cromgen_max_file_size_mb') || 60)
   const [file, setFile] = useState(null)
   const [dragging, setDragging] = useState(false)
   const [cameraOn, setCameraOn] = useState(false)
@@ -261,7 +262,7 @@ export default function UploadBox({ user, categories, onUploaded }) {
     const picked = incoming?.[0]
     if (!picked) return
     if (!picked.type.startsWith('image') && !picked.type.startsWith('video')) return setError('Only image and video files are supported.')
-    if (picked.size > 60 * 1024 * 1024) return setError('File size must be under 60 MB for this demo.')
+    if (picked.size > maxFileSizeMb * 1024 * 1024) return setError(`File size must be under ${maxFileSizeMb} MB for this demo.`)
     stopCamera()
     setError('')
     setFile(picked)
@@ -441,7 +442,7 @@ export default function UploadBox({ user, categories, onUploaded }) {
           <div>
             <div className="mx-auto grid h-20 w-20 place-items-center rounded-3xl bg-gradient-to-br from-cyan-500 to-blue-600 text-white shadow-xl"><FileUp size={34} /></div>
             <h3 className="mt-5 text-xl font-semibold text-slate-950 dark:text-white">Camera capture or direct upload</h3>
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Take a live photo, or upload images and videos up to 60 MB.</p>
+            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Take a live photo, or upload images and videos up to {maxFileSizeMb} MB.</p>
             <div className="mt-6 flex flex-wrap justify-center gap-3">
               <button type="button" className="btn-primary" onClick={startCamera}><Camera size={17} /> Open camera</button>
               <label className="btn-muted cursor-pointer">

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CheckCircle2, Cloud, Clock3, FolderOpen, Image, Search, ShieldCheck, Tags, UploadCloud, Users, Video, XCircle } from 'lucide-react'
+import { CheckCircle2, Cloud, Clock3, FolderOpen, Image, Save, Search, ShieldCheck, Tags, UploadCloud, Users, Video, XCircle } from 'lucide-react'
 import MediaCard from '../components/MediaCard'
 import MediaModal from '../components/MediaModal'
 import StatCard from '../components/StatCard'
@@ -276,12 +276,19 @@ export function ProfilePage() {
 
 export function SettingsPage() {
   const [cloudinary, setCloudinary] = useState(() => JSON.parse(localStorage.getItem('cromgen_cloudinary_settings') || '{"cloudName":"","apiKey":"","apiSecret":"","folder":"cromgen-media"}'))
+  const [uploadLimit, setUploadLimit] = useState(() => localStorage.getItem('cromgen_max_file_size_mb') || '60')
   const [toast, setToast] = useState('')
 
   const saveCloudinary = (event) => {
     event.preventDefault()
     localStorage.setItem('cromgen_cloudinary_settings', JSON.stringify(cloudinary))
     setToast('Cloudinary settings saved for this demo workspace.')
+  }
+
+  const saveUploadLimit = (event) => {
+    event.preventDefault()
+    localStorage.setItem('cromgen_max_file_size_mb', uploadLimit)
+    setToast(`Max file size saved as ${uploadLimit} MB for this demo workspace.`)
   }
 
   return (
@@ -296,6 +303,20 @@ export function SettingsPage() {
           </label>
         ))}
       </div>
+      <form onSubmit={saveUploadLimit} className="glass-card p-6">
+        <h2 className="text-xl font-semibold text-slate-950 dark:text-white">Upload Limits</h2>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Set the demo max image/video upload size shown in the app.</p>
+        <div className="mt-5 grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
+          <label className="field-label">
+            Max file size (MB)
+            <input className="field-input" min="1" max="500" type="number" value={uploadLimit} onChange={(event) => setUploadLimit(event.target.value)} />
+          </label>
+          <button className="btn-primary" type="submit"><Save size={17} /> Save limit</button>
+        </div>
+        <div className="mt-5 rounded-2xl bg-slate-100 p-4 text-sm text-slate-600 dark:bg-white/5 dark:text-slate-300">
+          Backend live limit comes from `backend/.env` as `MAX_FILE_SIZE_MB=60`. Update that value and restart backend for API uploads.
+        </div>
+      </form>
       <form onSubmit={saveCloudinary} className="glass-card p-6">
         <div className="flex items-start gap-4">
           <span className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 text-white">
