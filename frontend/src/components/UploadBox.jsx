@@ -1,0 +1,252 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Camera, FileUp, ImagePlus, RotateCcw, Save, Video } from 'lucide-react'
+import { addMedia } from '../utils/auth'
+
+export default function UploadBox({ user, categories, onUploaded }) {
+  const [file, setFile] = useState(null)
+  const [dragging, setDragging] = useState(false)
+  const [cameraOn, setCameraOn] = useState(false)
+  const [stream, setStream] = useState(null)
+  const [form, setForm] = useState({ title: '', category: categories[0]?.name || '', description: '' })
+  const [error, setError] = useState('')
+  const [fileDetails, setFileDetails] = useState(null)
+  const videoRef = useRef(null)
+  const canvasRef = useRef(null)
+  const preview = useMemo(() => (file ? URL.createObjectURL(file) : ''), [file])
+
+  const fetchFileDetails = (pickedFile, source, dimensions = {}) => {
+    const detail = {
+      source,
+      name: pickedFile.name,
+      type: pickedFile.type || 'Unknown',
+      size: `${(pickedFile.size / 1024 / 1024).toFixed(2)} MB`,
+      capturedAt: new Date(pickedFile.lastModified || Date.now()).toLocaleString(),
+      width: dimensions.width,
+      height: dimensions.height,
+    }
+
+    if (pickedFile.type.startsWith('image/') && (!detail.width || !detail.height)) {
+      const image = new window.Image()
+      image.onload = () => {
+        setFileDetails({ ...detail, width: image.naturalWidth, height: image.naturalHeight })
+        URL.revokeObjectURL(image.src)
+      }
+      image.src = URL.createObjectURL(pickedFile)
+      return
+    }
+
+    if (pickedFile.type.startsWith('video/') && (!detail.width || !detail.height)) {
+      const video = document.createElement('video')
+      video.onloadedmetadata = () => {
+        setFileDetails({ ...detail, width: video.videoWidth, height: video.videoHeight })
+        URL.revokeObjectURL(video.src)
+      }
+      video.src = URL.createObjectURL(pickedFile)
+      return
+    }
+
+    setFileDetails(detail)
+  }
+
+  const getDeviceInfo = async (source, dimensions = {}) => {
+    let cameraLabel = 'Unavailable'
+
+    try {
+      const devices = await navigator.mediaDevices?.enumerateDevices?.()
+      cameraLabel = devices?.find((device) => device.kind === 'videoinput' && device.label)?.label || cameraLabel
+    } catch {
+      cameraLabel = 'Permission not available'
+    }
+
+    return {
+      source,
+      cameraLabel,
+      platform: navigator.platform || 'Unknown',
+      userAgent: navigator.userAgent || 'Unknown',
+      language: navigator.language || 'Unknown',
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Unknown',
+      screen: `${window.screen.width} x ${window.screen.height}`,
+      viewport: `${window.innerWidth} x ${window.innerHeight}`,
+      capturedAt: new Date().toISOString(),
+      width: dimensions.width,
+      height: dimensions.height,
+    }
+  }
+
+  const stopCamera = () => {
+    stream?.getTracks().forEach((track) => track.stop())
+    setStream(null)
+    setCameraOn(false)
+  }
+
+  useEffect(() => {
+    if (videoRef.current && stream) videoRef.current.srcObject = stream
+  }, [stream])
+
+  useEffect(() => () => {
+    stream?.getTracks().forEach((track) => track.stop())
+  }, [stream])
+
+  const selectFile = (incoming) => {
+    const picked = incoming?.[0]
+    if (!picked) return
+    if (!picked.type.startsWith('image') && !picked.type.startsWith('video')) return setError('Only image and video files are supported.')
+    if (picked.size > 60 * 1024 * 1024) return setError('File size must be under 60 MB for this demo.')
+    stopCamera()
+    setError('')
+    setFile(picked)
+    fetchFileDetails(picked, 'Direct upload')
+    setForm((current) => ({ ...current, deviceInfo: null }))
+    if (!form.title) setForm((current) => ({ ...current, title: picked.name.replace(/\.[^/.]+$/, '') }))
+  }
+
+  const startCamera = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setError('Camera is not supported in this browser. Please use direct upload.')
+      return
+    }
+
+    try {
+      setError('')
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' },
+        audio: false,
+      })
+      setFile(null)
+      setStream(mediaStream)
+      setCameraOn(true)
+    } catch {
+      setError('Camera access blocked or unavailable. Please allow camera permission or use direct upload.')
+    }
+  }
+
+  const capturePhoto = () => {
+    const video = videoRef.current
+    const canvas = canvasRef.current
+    if (!video || !canvas) return
+
+    canvas.width = video.videoWidth || 1280
+    canvas.height = video.videoHeight || 720
+    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height)
+    const width = canvas.width
+    const height = canvas.height
+
+    canvas.toBlob(async (blob) => {
+      if (!blob) {
+        setError('Unable to capture photo. Please try again.')
+        return
+      }
+
+      const capturedFile = new File([blob], `camera-capture-${Date.now()}.jpg`, { type: 'image/jpeg' })
+      const deviceInfo = await getDeviceInfo('Mobile camera', { width, height })
+      setFile(capturedFile)
+      fetchFileDetails(capturedFile, 'Mobile camera', { width, height })
+      setForm((current) => ({ ...current, title: current.title || 'Camera Capture', deviceInfo }))
+      stopCamera()
+    }, 'image/jpeg', 0.92)
+  }
+
+  const submit = (event) => {
+    event.preventDefault()
+    if (!file) return setError('Choose an image/video or capture a photo before saving.')
+    if (!form.title || !form.category) return setError('Title and category are required.')
+    addMedia({ ...form, file }, user)
+    setFile(null)
+    setFileDetails(null)
+    setForm({ title: '', category: categories[0]?.name || '', description: '' })
+    onUploaded?.('Upload saved. Non-admin uploads are marked pending until approved.')
+  }
+
+  return (
+    <form onSubmit={submit} className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+      <div
+        className={`grid min-h-[360px] place-items-center rounded-3xl border border-dashed p-6 text-center transition ${dragging ? 'border-cyan-400 bg-cyan-500/10' : 'border-slate-300 bg-white/70 dark:border-white/10 dark:bg-white/5'}`}
+        onDragOver={(event) => { event.preventDefault(); setDragging(true) }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(event) => { event.preventDefault(); setDragging(false); selectFile(event.dataTransfer.files) }}
+      >
+        {cameraOn ? (
+          <div className="w-full">
+            <video ref={videoRef} autoPlay playsInline muted className="mx-auto max-h-[330px] w-full rounded-2xl bg-slate-950 object-contain" />
+            <canvas ref={canvasRef} className="hidden" />
+            <div className="mt-5 flex flex-wrap justify-center gap-3">
+              <button type="button" className="btn-primary" onClick={capturePhoto}><Camera size={17} /> Capture photo</button>
+              <button type="button" className="btn-muted" onClick={stopCamera}><RotateCcw size={17} /> Cancel camera</button>
+            </div>
+          </div>
+        ) : preview ? (
+          <div className="w-full">
+            {file.type.startsWith('video') ? <video src={preview} controls className="mx-auto max-h-[330px] rounded-2xl" /> : <img src={preview} alt="Preview" className="mx-auto max-h-[330px] rounded-2xl object-contain" />}
+            <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">{file.name} - {(file.size / 1024 / 1024).toFixed(1)} MB</p>
+            <div className="mt-4 flex flex-wrap justify-center gap-3">
+              <label className="btn-muted cursor-pointer">
+                <ImagePlus size={17} /> Change file
+                <input type="file" className="hidden" accept="image/*,video/*" onChange={(event) => selectFile(event.target.files)} />
+              </label>
+              <button type="button" className="btn-muted" onClick={startCamera}><Camera size={17} /> Retake camera</button>
+            </div>
+          </div>
+        ) : (
+          <div>
+            <div className="mx-auto grid h-20 w-20 place-items-center rounded-3xl bg-gradient-to-br from-cyan-500 to-blue-600 text-white shadow-xl"><FileUp size={34} /></div>
+            <h3 className="mt-5 text-xl font-semibold text-slate-950 dark:text-white">Camera capture or direct upload</h3>
+            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Take a live photo, or upload images and videos up to 60 MB.</p>
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
+              <button type="button" className="btn-primary" onClick={startCamera}><Camera size={17} /> Open camera</button>
+              <label className="btn-muted cursor-pointer">
+                <ImagePlus size={17} /> Browse files
+                <input type="file" className="hidden" accept="image/*,video/*" onChange={(event) => selectFile(event.target.files)} />
+              </label>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="glass-card p-6">
+        <h2 className="text-xl font-semibold text-slate-950 dark:text-white">Media details</h2>
+        <div className="mt-6 grid gap-4">
+          <label className="field-label">Title<input className="field-input" value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="Campaign hero image" /></label>
+          <label className="field-label">Category<select className="field-input" value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}>{categories.map((item) => <option key={item.id}>{item.name}</option>)}</select></label>
+          {fileDetails && (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm dark:border-white/10 dark:bg-white/5">
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-semibold text-slate-950 dark:text-white">Photo details</span>
+                <span className="badge bg-blue-500/15 text-blue-700 dark:text-cyan-300">{fileDetails.source}</span>
+              </div>
+              <div className="mt-3 grid gap-2 text-slate-500 dark:text-slate-400 sm:grid-cols-2">
+                <p><span className="font-medium text-slate-700 dark:text-slate-200">File:</span> {fileDetails.name}</p>
+                <p><span className="font-medium text-slate-700 dark:text-slate-200">Type:</span> {fileDetails.type}</p>
+                <p><span className="font-medium text-slate-700 dark:text-slate-200">Size:</span> {fileDetails.size}</p>
+                <p><span className="font-medium text-slate-700 dark:text-slate-200">Date:</span> {fileDetails.capturedAt}</p>
+                {fileDetails.width && fileDetails.height && <p className="sm:col-span-2"><span className="font-medium text-slate-700 dark:text-slate-200">Dimensions:</span> {fileDetails.width} x {fileDetails.height}px</p>}
+              </div>
+              {form.deviceInfo && (
+                <div className="mt-4 rounded-2xl border border-blue-500/20 bg-blue-500/10 p-4">
+                  <div className="mb-3 flex items-center gap-2 font-semibold text-slate-950 dark:text-white">
+                    <Camera size={16} className="text-blue-600 dark:text-cyan-300" />
+                    Mobile details
+                  </div>
+                  <div className="grid gap-2 text-slate-500 dark:text-slate-400 sm:grid-cols-2">
+                    <p><span className="font-medium text-slate-700 dark:text-slate-200">Camera:</span> {form.deviceInfo.cameraLabel}</p>
+                    <p><span className="font-medium text-slate-700 dark:text-slate-200">Platform:</span> {form.deviceInfo.platform}</p>
+                    <p><span className="font-medium text-slate-700 dark:text-slate-200">Screen:</span> {form.deviceInfo.screen}</p>
+                    <p><span className="font-medium text-slate-700 dark:text-slate-200">Viewport:</span> {form.deviceInfo.viewport}</p>
+                    <p><span className="font-medium text-slate-700 dark:text-slate-200">Language:</span> {form.deviceInfo.language}</p>
+                    <p><span className="font-medium text-slate-700 dark:text-slate-200">Timezone:</span> {form.deviceInfo.timezone}</p>
+                    <p className="sm:col-span-2 break-all"><span className="font-medium text-slate-700 dark:text-slate-200">Browser:</span> {form.deviceInfo.userAgent}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          <label className="field-label">Description<textarea className="field-input min-h-28" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="Describe usage, source, or review notes" /></label>
+        </div>
+        {error && <p className="mt-4 rounded-2xl bg-rose-500/10 px-4 py-3 text-sm text-rose-600 dark:text-rose-300">{error}</p>}
+        <div className="mt-6 flex flex-wrap gap-3">
+          <button className="btn-primary" type="submit"><Save size={17} /> Save media</button>
+          <span className="btn-muted"><Video size={17} /> Status: {user.role === 'admin' ? 'Approved' : 'Pending'}</span>
+        </div>
+      </div>
+    </form>
+  )
+}
